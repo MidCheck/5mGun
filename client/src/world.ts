@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import { MapDef, GAME, ZOMBIES, ZombieTier, Team } from '@5mgun/shared';
+import { Assets, RiggedInstance } from './assets.js';
+
+interface Ent { group: THREE.Group; rig: RiggedInstance | null; px: number; pz: number; }
 
 export class World {
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
-  private players = new Map<string, THREE.Group>();
-  private zombies = new Map<string, THREE.Group>();
+  private players = new Map<string, Ent>();
+  private zombies = new Map<string, Ent>();
   private tracers: { line: THREE.Line; life: number }[] = [];
   private particles: { mesh: THREE.Points; vel: Float32Array; life: number }[] = [];
   private muzzle: THREE.PointLight;
@@ -19,17 +22,22 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.scene.background = new THREE.Color(0x10131c);
-    this.scene.fog = new THREE.Fog(0x10131c, 40, 90);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
+    this.scene.background = new THREE.Color(0x6b7890);
+    this.scene.fog = new THREE.Fog(0x6b7890, 55, 140);
 
     this.camera = new THREE.PerspectiveCamera(78, window.innerWidth / window.innerHeight, 0.05, 500);
     this.camera.position.set(0, GAME.player.height, 0);
 
-    const hemi = new THREE.HemisphereLight(0x99aaff, 0x223322, 0.7);
+    const hemi = new THREE.HemisphereLight(0xbcd0ff, 0x6a5a48, 1.25);
     this.scene.add(hemi);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
-    dir.position.set(20, 40, 10);
+    const dir = new THREE.DirectionalLight(0xfff2e0, 2.0);
+    dir.position.set(30, 50, 18);
     this.scene.add(dir);
+    const fill = new THREE.DirectionalLight(0x8090b0, 0.5);
+    fill.position.set(-20, 20, -15);
+    this.scene.add(fill);
 
     this.muzzle = new THREE.PointLight(0xffcc66, 0, 12);
     this.scene.add(this.muzzle);
@@ -48,53 +56,74 @@ export class World {
   }
 
   buildMap(map: MapDef) {
-    // 清场景中的地图层（保留灯光/相机）
+    this.addSky();
+
+    // 地面（CC0 沥青贴图，回退纯色）
+    const gTex = Assets.textures.ground;
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(map.halfSize * 2, map.halfSize * 2),
-      new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 0.95 }),
+      new THREE.MeshStandardMaterial(gTex ? { map: gTex, roughness: 0.95 } : { color: 0x2a2f3a, roughness: 0.95 }),
     );
     ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
     this.scene.add(ground);
 
-    // 网格地面线
-    const grid = new THREE.GridHelper(map.halfSize * 2, map.halfSize, 0x3a4256, 0x232938);
-    (grid.material as THREE.Material).opacity = 0.4;
-    (grid.material as THREE.Material).transparent = true;
-    this.scene.add(grid);
-
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x4a5266, roughness: 0.8 });
+    // 障碍（混凝土墙贴图）
+    const wTex = Assets.textures.wall;
+    const wallMat = new THREE.MeshStandardMaterial(wTex ? { map: wTex, roughness: 0.85 } : { color: 0x4a5266, roughness: 0.8 });
+    const mTex = Assets.textures.metal;
+    const crateMat = new THREE.MeshStandardMaterial(mTex ? { map: mTex, roughness: 0.6, metalness: 0.3 } : { color: 0x6a6e58, roughness: 0.7 });
     for (const b of map.obstacles) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(b.hx * 2, b.height, b.hz * 2), wallMat);
+      // 低矮的当作集装箱(金属)，高的当作墙(混凝土)
+      const mat = b.height <= 1.6 ? crateMat : wallMat;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(b.hx * 2, b.height, b.hz * 2), mat);
       m.position.set(b.cx, b.height / 2, b.cz);
       this.scene.add(m);
     }
     // 外墙
     const wallH = 4;
     const s = map.halfSize;
+    const edgeMat = new THREE.MeshStandardMaterial(wTex ? { map: wTex, roughness: 0.9, color: 0x9099a8 } : { color: 0x333a4a });
     const edges: [number, number, number, number][] = [
       [0, -s, s * 2, 0.4], [0, s, s * 2, 0.4], [-s, 0, 0.4, s * 2], [s, 0, 0.4, s * 2],
     ];
     for (const [x, z, w, d] of edges) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d),
-        new THREE.MeshStandardMaterial({ color: 0x333a4a }));
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), edgeMat);
       m.position.set(x, wallH / 2, z);
       this.scene.add(m);
     }
   }
 
+  private addSky() {
+    // 程序化渐变天空（顶深蓝→地平线暖灰）
+    const sky = new THREE.Mesh(
+      new THREE.SphereGeometry(300, 24, 12),
+      new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: { top: { value: new THREE.Color(0x4a6da8) }, bot: { value: new THREE.Color(0x9aa3b0) } },
+        vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+        fragmentShader: `varying vec3 vP; uniform vec3 top; uniform vec3 bot;
+          void main(){ float h = clamp((normalize(vP).y*0.5+0.5),0.0,1.0); gl_FragColor = vec4(mix(bot, top, h),1.0); }`,
+      }),
+    );
+    this.scene.add(sky);
+  }
+
   private makeViewmodel(): THREE.Group {
     const g = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, 0.12, 0.5),
-      new THREE.MeshStandardMaterial({ color: 0x222428, metalness: 0.6, roughness: 0.4 }),
-    );
-    const barrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.02, 0.02, 0.4),
-      new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8 }),
-    );
-    barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0, 0.02, -0.4);
-    g.add(body, barrel);
+    const metal = new THREE.MeshStandardMaterial({ color: 0x26282e, metalness: 0.7, roughness: 0.35 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x15161a, metalness: 0.5, roughness: 0.5 });
+    const poly = new THREE.MeshStandardMaterial({ color: 0x33363d, metalness: 0.2, roughness: 0.7 });
+    const part = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, rx = 0) => {
+      const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); if (rx) m.rotation.x = rx; g.add(m); return m;
+    };
+    part(new THREE.BoxGeometry(0.07, 0.11, 0.5), metal, 0, 0, 0);          // 机匣
+    part(new THREE.BoxGeometry(0.055, 0.06, 0.42), poly, 0, -0.01, -0.42); // 护木
+    part(new THREE.CylinderGeometry(0.016, 0.016, 0.45), dark, 0, 0.02, -0.62, Math.PI / 2); // 枪管
+    part(new THREE.BoxGeometry(0.05, 0.16, 0.07), dark, 0, -0.13, 0.06);   // 弹匣
+    part(new THREE.BoxGeometry(0.045, 0.12, 0.06), poly, 0, -0.1, 0.16, 0.5); // 握把
+    part(new THREE.BoxGeometry(0.05, 0.09, 0.18), poly, 0, -0.02, 0.32);   // 枪托
+    part(new THREE.BoxGeometry(0.012, 0.04, 0.012), dark, 0, 0.09, -0.2);  // 准星
     g.position.set(0.18, -0.18, -0.4);
     return g;
   }
@@ -153,41 +182,54 @@ export class World {
     return r;
   }
 
-  private makeZombieMesh(tier: string, scale: number, color: number): THREE.Group {
+  private addHpBar(g: THREE.Group, scale: number, y: number) {
+    const bar = new THREE.Sprite(this.hpMat);
+    bar.scale.set(1.2 * scale, 0.1, 1); bar.position.y = y; bar.name = 'hp';
+    bar.raycast = () => {}; // 不参与射线检测
+    g.add(bar);
+  }
+
+  /** 几何体占位丧尸（模型加载失败时回退） */
+  private makeZombiePrim(tier: string, scale: number, color: number): THREE.Group {
     const g = new THREE.Group();
     const r = this.getZRes(tier, scale, color);
     const body = new THREE.Mesh(r.body, r.bodyMat); body.position.y = 0.9 * scale; body.name = 'body';
     const head = new THREE.Mesh(r.head, r.headMat); head.position.y = 1.5 * scale; head.name = 'head';
     const arm = new THREE.Mesh(r.arm, r.bodyMat); arm.position.set(0, 1.1 * scale, -0.4 * scale); arm.name = 'arm';
     g.add(body, head, arm);
-    // 血条（共用材质，仅 scale/position 个体化）
-    const bar = new THREE.Sprite(this.hpMat);
-    bar.scale.set(1.2 * scale, 0.1, 1); bar.position.y = 1.95 * scale; bar.name = 'hp';
-    bar.raycast = () => {}; // 不参与射线检测（否则曳光弹会停在血条上，且 Sprite.raycast 需要相机）
-    g.add(bar);
     return g;
   }
 
   syncPlayers(statePlayers: any, localId: string) {
     const seen = new Set<string>();
     statePlayers.forEach((p: any, id: string) => {
-      if (id === localId) return; // 本地玩家是第一人称，不渲染自身
+      if (id === localId) return; // 第一人称不渲染自身
       seen.add(id);
-      let mesh = this.players.get(id);
-      if (!mesh) {
-        mesh = this.makePlayerMesh(p.team, p.isBot);
-        this.players.set(id, mesh);
-        this.scene.add(mesh);
+      let ent = this.players.get(id);
+      if (!ent) {
+        const group = new THREE.Group();
+        const color = p.team === Team.A ? 0x3c7cff : p.team === Team.B ? 0xff5a3c : 0x888888;
+        const rig = Assets.makeSoldier(color);
+        if (rig) group.add(rig.object); else group.add(...this.makePlayerMesh(p.team, p.isBot).children);
+        ent = { group, rig, px: p.x, pz: p.z };
+        this.players.set(id, ent);
+        this.scene.add(group);
       }
-      mesh.visible = p.alive && !p.downed;
-      // 平滑插值
-      mesh.position.x += (p.x - mesh.position.x) * 0.3;
-      mesh.position.z += (p.z - mesh.position.z) * 0.3;
-      mesh.position.y = p.y;
-      mesh.rotation.y = p.yaw;
+      ent.group.visible = p.alive && !p.downed;
+      const g = ent.group;
+      g.position.x += (p.x - g.position.x) * 0.3;
+      g.position.z += (p.z - g.position.z) * 0.3;
+      g.position.y = p.y;
+      g.rotation.y = p.yaw + Math.PI; // 士兵模型默认面向 +Z，校正到前向
+      // 动画：按移动速度选 Idle/Walk/Run
+      if (ent.rig) {
+        const sp = Math.hypot(p.x - ent.px, p.z - ent.pz);
+        ent.rig.play(sp > 0.18 ? 'Running' : sp > 0.02 ? 'Walking' : 'Idle');
+      }
+      ent.px = p.x; ent.pz = p.z;
     });
-    for (const [id, mesh] of this.players) {
-      if (!seen.has(id)) { this.scene.remove(mesh); this.players.delete(id); }
+    for (const [id, ent] of this.players) {
+      if (!seen.has(id)) { this.scene.remove(ent.group); this.players.delete(id); }
     }
   }
 
@@ -195,35 +237,45 @@ export class World {
     const seen = new Set<string>();
     stateZombies.forEach((z: any, id: string) => {
       seen.add(id);
-      let mesh = this.zombies.get(id);
+      let ent = this.zombies.get(id);
       const def = ZOMBIES[z.tier as ZombieTier];
-      if (!mesh) {
-        mesh = this.makeZombieMesh(z.tier, def.scale, def.color);
-        this.zombies.set(id, mesh);
-        this.scene.add(mesh);
+      if (!ent) {
+        const group = new THREE.Group();
+        const rig = Assets.makeZombie(z.tier, def.scale, def.color);
+        if (rig) group.add(rig.object); else group.add(...this.makeZombiePrim(z.tier, def.scale, def.color).children);
+        this.addHpBar(group, def.scale, (rig ? 1.95 : 1.95) * def.scale + 0.2);
+        ent = { group, rig, px: z.x, pz: z.z };
+        this.zombies.set(id, ent);
+        this.scene.add(group);
       }
-      const dx = z.x - mesh.position.x, dz = z.z - mesh.position.z;
-      mesh.position.x += dx * 0.4;
-      mesh.position.z += dz * 0.4;
-      // 面向移动方向
+      const g = ent.group;
+      const dx = z.x - g.position.x, dz = z.z - g.position.z;
+      g.position.x += dx * 0.4; g.position.z += dz * 0.4;
       if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
         const targetYaw = Math.atan2(dx, dz);
-        let d = targetYaw - mesh.rotation.y;
+        let d = targetYaw - g.rotation.y;
         while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
-        mesh.rotation.y += d * 0.2;
+        g.rotation.y += d * 0.2;
       }
-      const hp = mesh.getObjectByName('hp') as THREE.Sprite;
+      const hp = g.getObjectByName('hp') as THREE.Sprite;
       if (hp) hp.scale.x = (1.2 * def.scale) * Math.max(0, z.hp / z.maxHp);
-      // 攻击姿态：前扑（身体前倾脉冲）作为攻击预兆/反馈
-      const ud = mesh.userData as any;
-      if (z.anim === 'attack' && ud.anim !== 'attack') ud.attackAt = performance.now();
-      ud.anim = z.anim;
-      const since = performance.now() - (ud.attackAt ?? -1e9);
-      const lunge = since < 320 ? Math.sin((since / 320) * Math.PI) : 0;
-      mesh.children.forEach((c) => { if (c.name === 'body' || c.name === 'arm') c.rotation.x = lunge * 0.5; });
+
+      if (ent.rig) {
+        // 骨骼动画：攻击→Punch，移动→Running(奔尸)/Walking
+        if (z.anim === 'attack') ent.rig.play('Punch', 0.12);
+        else ent.rig.play(z.tier === 't2' ? 'Running' : 'Walking', 0.2);
+      } else {
+        // 占位：前扑脉冲
+        const ud = g.userData as any;
+        if (z.anim === 'attack' && ud.anim !== 'attack') ud.attackAt = performance.now();
+        ud.anim = z.anim;
+        const since = performance.now() - (ud.attackAt ?? -1e9);
+        const lunge = since < 320 ? Math.sin((since / 320) * Math.PI) : 0;
+        g.children.forEach((c) => { if (c.name === 'body' || c.name === 'arm') c.rotation.x = lunge * 0.5; });
+      }
     });
-    for (const [id, mesh] of this.zombies) {
-      if (!seen.has(id)) { this.scene.remove(mesh); this.zombies.delete(id); }
+    for (const [id, ent] of this.zombies) {
+      if (!seen.has(id)) { this.scene.remove(ent.group); this.zombies.delete(id); }
     }
   }
 
@@ -291,6 +343,10 @@ export class World {
   playReload(ms: number) { this.reloadStart = performance.now(); this.reloadDur = ms; }
 
   render(dt: number) {
+    // 骨骼动画推进
+    this.zombies.forEach((e) => e.rig?.mixer.update(dt));
+    this.players.forEach((e) => e.rig?.mixer.update(dt));
+
     // 开镜 FOV 过渡
     this.aimT += (this.aimTarget - this.aimT) * Math.min(1, dt * 14);
     const fov = this.baseFov + (this.adsFov - this.baseFov) * this.aimT;

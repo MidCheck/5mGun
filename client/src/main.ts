@@ -4,6 +4,7 @@ import { Hud } from './ui.js';
 import { Game } from './game.js';
 import { makeClient, quickStart, createRoom, joinByCode } from './net.js';
 import { initAudio, uiClick } from './audio.js';
+import { Assets } from './assets.js';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -103,6 +104,7 @@ async function launch(getJoin: () => Promise<{ room: any; sessionId: string }>) 
   status('连接服务器中…');
   try {
     const { room, sessionId } = await getJoin();
+    if (!Assets.ready) { status('加载素材中…'); await Assets.load(); }
     status('');
     const world = new World(canvas);
     const input = new InputController(canvas);

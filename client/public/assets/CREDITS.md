@@ -16,12 +16,18 @@
 > 命中/爆头/连杀播报/丧尸吼叫等仍为 WebAudio 程序化合成（合成音，无版权问题），后续可按需替换。
 > 采样加载失败时自动回退到程序化合成（见 `client/src/audio.ts`）。
 
-## 美术（待替换）
+## 美术（已接入）
 
-| 文件 | 类型 | 计划来源 | 授权 |
-|------|------|----------|------|
-| （计划）models/weapons/*.glb | 武器模型 | Quaternius / Kenney | CC0 |
-| （计划）models/zombies/*.glb | 丧尸模型 | Quaternius | CC0 |
+| 文件 | 类型 | 来源 | 授权 |
+|------|------|------|------|
+| models/characters/zombie.glb | 角色骨骼动画模型（丧尸绿色 / 玩家按队伍着色复用同一模型） | RobotExpressive by Tomás Laulhé（修改 Don McCurdy），three.js 示例 https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf/RobotExpressive | **CC0** |
+| textures/ground.jpg | 地面（沥青） | Poly Haven `asphalt_02` https://polyhaven.com/a/asphalt_02 | **CC0** |
+| textures/wall.jpg | 墙面（混凝土） | Poly Haven `concrete_wall_008` | **CC0** |
+| textures/metal.jpg | 集装箱（金属板） | Poly Haven `metal_plate` | **CC0** |
+
+> 武器视图模型暂为程序化几何体（多部件步枪），后续可接入 CC0 枪械 GLB。
+> 注：曾下载 three.js 的 Soldier.glb 作玩家模型，但其授权未明确标注，为合规起见已移除，玩家改用 CC0 的 RobotExpressive（按队伍着色）。
+> 天空为程序化渐变着色器（无版权问题）。
 
 ## 合规底线
 - ✅ 允许：CC0 / CC-BY（署名）/ 明确商用授权 / 原创 / 可商用 AI 生成
