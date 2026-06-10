@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="5mGun" />
+  <title>5mGun · 5 分钟爽枪</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔫</text></svg>" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- 准星 -->
+  <div id="crosshair" class="hidden">
+    <span class="ch ch-t"></span><span class="ch ch-b"></span>
+    <span class="ch ch-l"></span><span class="ch ch-r"></span>
+    <span id="hitmarker"></span>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="topbar">
+      <div id="scoreboard"></div>
+      <div id="timer">--:--</div>
+      <div id="waveinfo"></div>
+    </div>
+    <div id="killfeed"></div>
+    <div id="bottomLeft">
+      <div id="healthbar"><div id="healthfill"></div><span id="healthtext">100</span></div>
+      <div id="shield" class="hidden">🛡 无敌保护</div>
+      <div id="coins" class="hidden">🪙 <span id="coinval">0</span></div>
+    </div>
+    <div id="deathBanner" class="hidden"></div>
+    <div id="bottomRight">
+      <div id="streak"></div>
+      <div id="ammo"><span id="ammomag">30</span> / <span id="ammoreserve">120</span></div>
+      <div id="weaponname">突击步枪</div>
+    </div>
+    <div id="centerMsg"></div>
+    <div id="bloodOverlay"></div>
+    <div id="killBanner"></div>
+    <div id="dmgDir"><div class="dmg-arrow"></div></div>
+  </div>
+
+  <!-- 升级商店（PvE） -->
+  <div id="shop" class="hidden">
+    <h2>局内升级 <small>（按 B 关闭）</small></h2>
+    <div id="shopGrid"></div>
+  </div>
+
+  <!-- 移动端控制 -->
+  <div id="mobile" class="hidden">
+    <div id="joystick"></div>
+    <!-- 右手拇指自然落点：开火最大，其余按钮在可达弧线上 -->
+    <button class="mbtn mfire" id="mFire">开火</button>
+    <button class="mbtn msat" id="mAim">瞄准</button>
+    <button class="mbtn msat" id="mReload">换弹</button>
+    <button class="mbtn msat" id="mJump">跳</button>
+    <button class="mbtn msat" id="mCrouch">蹲</button>
+    <button class="mbtn msat" id="mSwitch">换枪</button>
+  </div>
+  <button id="fsBtn" class="hidden">⛶ 全屏</button>
+
+  <!-- 菜单 / 大厅 -->
+  <div id="menu">
+    <div class="menu-card">
+      <h1>5mGun <span class="sub">5 分钟爽枪</span></h1>
+      <input id="nick" maxlength="16" placeholder="输入昵称" />
+      <div class="mode-row">
+        <button class="mode-btn active" data-mode="tdm">PvP 团队歼灭</button>
+        <button class="mode-btn" data-mode="zombie">PvE 刷丧尸</button>
+      </div>
+      <div id="botSkillRow" class="skill-row">
+        <span>人机难度：</span>
+        <button class="skill-btn" data-skill="rookie">萌新</button>
+        <button class="skill-btn active" data-skill="normal">普通</button>
+        <button class="skill-btn" data-skill="veteran">老兵</button>
+      </div>
+      <button id="quickStart" class="primary">单人快速开打</button>
+      <div class="divider">或 和好友联机</div>
+      <div class="join-row">
+        <button id="createRoom">创建房间</button>
+        <input id="roomCode" placeholder="房间码" />
+        <button id="joinRoom">加入</button>
+      </div>
+      <div id="menuStatus"></div>
+      <div class="hint">PC：WASD 移动 · 鼠标瞄准 · 左键开火 · R 换弹 · Shift 疾跑 · 空格跳 · B 商店(PvE)</div>
+    </div>
+  </div>
+
+  <!-- 结算 -->
+  <div id="endScreen" class="hidden">
+    <div class="end-card">
+      <h1 id="endTitle">对局结束</h1>
+      <div id="endStats"></div>
+      <button id="againBtn" class="primary">再来一局</button>
+      <button id="menuBtn">返回菜单</button>
+    </div>
+  </div>
+
+  <div id="roomCodeBadge" class="hidden">房间码：<b id="roomCodeVal"></b> <button id="copyCode">复制</button></div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
