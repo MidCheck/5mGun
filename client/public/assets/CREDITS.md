@@ -24,6 +24,7 @@
 | textures/ground.jpg | 地面（沥青） | Poly Haven `asphalt_02` https://polyhaven.com/a/asphalt_02 | **CC0** |
 | textures/wall.jpg | 墙面（混凝土） | Poly Haven `concrete_wall_008` | **CC0** |
 | textures/metal.jpg | 集装箱（金属板） | Poly Haven `metal_plate` | **CC0** |
+| textures/sky.hdr | HDRI 天空盒 + 环境光照 | Poly Haven `qwantani_puresky` https://polyhaven.com/a/qwantani_puresky | **CC0** |
 
 > 武器视图模型暂为程序化几何体（多部件步枪），后续可接入 CC0 枪械 GLB。
 > 注：曾下载 three.js 的 Soldier.glb 作玩家模型，但其授权未明确标注，为合规起见已移除，玩家改用 CC0 的 RobotExpressive（按队伍着色）。

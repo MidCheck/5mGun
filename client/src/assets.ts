@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 // 资源管理：加载 CC0 骨骼动画模型(丧尸/玩家) + CC0 贴图。
@@ -22,6 +23,7 @@ class AssetManager {
   private tierMat = new Map<string, THREE.Material>();
 
   textures: { ground?: THREE.Texture; wall?: THREE.Texture; metal?: THREE.Texture } = {};
+  hdr: THREE.DataTexture | null = null;
 
   async load(): Promise<void> {
     const tasks: Promise<any>[] = [];
@@ -32,6 +34,9 @@ class AssetManager {
     tasks.push(tex('/assets/textures/ground.jpg', 16).then((t) => { this.textures.ground = t; }));
     tasks.push(tex('/assets/textures/wall.jpg', 2).then((t) => { this.textures.wall = t; }));
     tasks.push(tex('/assets/textures/metal.jpg', 1).then((t) => { this.textures.metal = t; }));
+    tasks.push(new Promise<void>((resolve) => {
+      new RGBELoader().load('/assets/textures/sky.hdr', (t) => { this.hdr = t; resolve(); }, undefined, () => resolve());
+    }));
 
     await Promise.all(tasks);
     this.ready = true;

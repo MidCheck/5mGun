@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MapDef, GAME, ZOMBIES, ZombieTier, Team } from '@5mgun/shared';
 import { Assets, RiggedInstance } from './assets.js';
 
-interface Ent { group: THREE.Group; rig: RiggedInstance | null; px: number; pz: number; }
+interface Ent { group: THREE.Group; rig: RiggedInstance | null; px: number; pz: number; speedEst: number; lastMoveT: number; }
 
 export class World {
   scene = new THREE.Scene();
@@ -30,14 +30,12 @@ export class World {
     this.camera = new THREE.PerspectiveCamera(78, window.innerWidth / window.innerHeight, 0.05, 500);
     this.camera.position.set(0, GAME.player.height, 0);
 
-    const hemi = new THREE.HemisphereLight(0xbcd0ff, 0x6a5a48, 1.25);
+    // HDRI 环境光提供大部分环境照明，这里仅补一盏方向"太阳"光增强立体感
+    const hemi = new THREE.HemisphereLight(0xbcd0ff, 0x6a5a48, 0.35);
     this.scene.add(hemi);
-    const dir = new THREE.DirectionalLight(0xfff2e0, 2.0);
+    const dir = new THREE.DirectionalLight(0xfff2e0, 1.6);
     dir.position.set(30, 50, 18);
     this.scene.add(dir);
-    const fill = new THREE.DirectionalLight(0x8090b0, 0.5);
-    fill.position.set(-20, 20, -15);
-    this.scene.add(fill);
 
     this.muzzle = new THREE.PointLight(0xffcc66, 0, 12);
     this.scene.add(this.muzzle);
@@ -92,10 +90,23 @@ export class World {
       m.position.set(x, wallH / 2, z);
       this.scene.add(m);
     }
+    this.addProps(map);
   }
 
   private addSky() {
-    // 程序化渐变天空（顶深蓝→地平线暖灰）
+    if (Assets.hdr) {
+      // 真实 HDRI 天空盒 + 基于图像的环境光照（PBR 反射/环境光）
+      const hdr = Assets.hdr;
+      hdr.mapping = THREE.EquirectangularReflectionMapping;
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      const env = pmrem.fromEquirectangular(hdr).texture;
+      this.scene.background = hdr;
+      this.scene.environment = env;
+      this.scene.fog = new THREE.Fog(0x9fb0c4, 70, 180);
+      pmrem.dispose();
+      return;
+    }
+    // 渐变天空 fallback
     const sky = new THREE.Mesh(
       new THREE.SphereGeometry(300, 24, 12),
       new THREE.ShaderMaterial({
@@ -107,6 +118,47 @@ export class World {
       }),
     );
     this.scene.add(sky);
+  }
+
+  /** 散布道具（桶/木箱/路障/管道/锥桶），打破"空盒子"观感 */
+  private addProps(map: MapDef) {
+    const mTex = Assets.textures.metal, wTex = Assets.textures.wall;
+    const barrelGeo = new THREE.CylinderGeometry(0.35, 0.35, 1.05, 14);
+    const crateGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+    const coneGeo = new THREE.ConeGeometry(0.28, 0.6, 12);
+    const pipeGeo = new THREE.CylinderGeometry(0.18, 0.18, 6, 10);
+    const barrelMats = [0xc23b22, 0x2a6cc2, 0x4a7a3a, 0x8a7a3a].map((c) =>
+      new THREE.MeshStandardMaterial(mTex ? { map: mTex, color: c, roughness: 0.55, metalness: 0.4 } : { color: c, roughness: 0.6, metalness: 0.3 }));
+    const crateMat = new THREE.MeshStandardMaterial(mTex ? { map: mTex, color: 0xb08850, roughness: 0.8 } : { color: 0xb08850, roughness: 0.8 });
+    const coneMat = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.6, emissive: 0x331000 });
+    const pipeMat = new THREE.MeshStandardMaterial(mTex ? { map: mTex, color: 0x9099a0, roughness: 0.4, metalness: 0.7 } : { color: 0x9099a0, metalness: 0.7, roughness: 0.4 });
+    const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, ry = 0, rx = 0) => {
+      const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, 0); this.scene.add(m); return m;
+    };
+    // 在每个障碍旁布置桶/箱（贴着掩体，读作场景细节）
+    map.obstacles.forEach((b, i) => {
+      const ox = b.cx + (b.hx + 0.5) * (i % 2 ? 1 : -1);
+      const oz = b.cz + (b.hz + 0.4);
+      add(barrelGeo, barrelMats[i % barrelMats.length], ox, 0.52, oz, i);
+      if (i % 2 === 0) add(crateGeo, crateMat, b.cx - (b.hx + 0.6), 0.45, b.cz - 0.3, i * 0.3);
+      if (i % 3 === 0) add(barrelGeo, barrelMats[(i + 1) % barrelMats.length], ox + 0.7, 0.52, oz + 0.2, i);
+    });
+    // 锥桶沿中线
+    for (let z = -map.halfSize + 6; z < map.halfSize - 6; z += 7) {
+      add(coneGeo, coneMat, Math.sin(z) * 3, 0.3, z, 0);
+    }
+    // 管道沿外墙
+    const s = map.halfSize - 1.2;
+    add(pipeGeo, pipeMat, -s, 1.2, 0, 0, Math.PI / 2);
+    add(pipeGeo, pipeMat, s, 2.4, 0, 0, Math.PI / 2);
+    add(pipeGeo, pipeMat, 0, 1.6, -s, Math.PI / 2, Math.PI / 2);
+    // 角落堆叠木箱
+    const corners: [number, number][] = [[-s + 3, -s + 3], [s - 3, s - 3], [-s + 3, s - 3], [s - 3, -s + 3]];
+    corners.forEach(([cx, cz], i) => {
+      add(crateGeo, crateMat, cx, 0.45, cz, i);
+      add(crateGeo, crateMat, cx, 1.35, cz, i + 0.4);
+      add(crateGeo, crateMat, cx + 0.95, 0.45, cz, i);
+    });
   }
 
   private makeViewmodel(): THREE.Group {
@@ -211,7 +263,7 @@ export class World {
         const color = p.team === Team.A ? 0x3c7cff : p.team === Team.B ? 0xff5a3c : 0x888888;
         const rig = Assets.makeSoldier(color);
         if (rig) group.add(rig.object); else group.add(...this.makePlayerMesh(p.team, p.isBot).children);
-        ent = { group, rig, px: p.x, pz: p.z };
+        ent = { group, rig, px: p.x, pz: p.z, speedEst: 0, lastMoveT: performance.now() };
         this.players.set(id, ent);
         this.scene.add(group);
       }
@@ -220,13 +272,25 @@ export class World {
       g.position.x += (p.x - g.position.x) * 0.3;
       g.position.z += (p.z - g.position.z) * 0.3;
       g.position.y = p.y;
-      g.rotation.y = p.yaw + Math.PI; // 士兵模型默认面向 +Z，校正到前向
-      // 动画：按移动速度选 Idle/Walk/Run
+      g.rotation.y = p.yaw + Math.PI; // 模型默认面向 +Z，校正到前向
+      // 动画：用平滑速度估计 + 滞回阈值，避免 20Hz 服务器更新导致的抽搐
       if (ent.rig) {
-        const sp = Math.hypot(p.x - ent.px, p.z - ent.pz);
-        ent.rig.play(sp > 0.18 ? 'Running' : sp > 0.02 ? 'Walking' : 'Idle');
+        const now = performance.now();
+        const dist = Math.hypot(p.x - ent.px, p.z - ent.pz);
+        if (dist > 1e-3) {
+          const dtS = Math.max(0.02, (now - ent.lastMoveT) / 1000);
+          ent.speedEst = ent.speedEst * 0.6 + (dist / dtS) * 0.4;
+          ent.px = p.x; ent.pz = p.z; ent.lastMoveT = now;
+        } else if (now - ent.lastMoveT > 120) {
+          ent.speedEst *= 0.7; // 停下后衰减到 Idle
+        }
+        const v = ent.speedEst, cur = ent.rig.current;
+        let anim = cur || 'Idle';
+        if (v > 5.5) anim = 'Running';
+        else if (v > 1.2) anim = 'Walking';
+        else if (v < 0.4) anim = 'Idle';
+        ent.rig.play(anim);
       }
-      ent.px = p.x; ent.pz = p.z;
     });
     for (const [id, ent] of this.players) {
       if (!seen.has(id)) { this.scene.remove(ent.group); this.players.delete(id); }
@@ -243,8 +307,8 @@ export class World {
         const group = new THREE.Group();
         const rig = Assets.makeZombie(z.tier, def.scale, def.color);
         if (rig) group.add(rig.object); else group.add(...this.makeZombiePrim(z.tier, def.scale, def.color).children);
-        this.addHpBar(group, def.scale, (rig ? 1.95 : 1.95) * def.scale + 0.2);
-        ent = { group, rig, px: z.x, pz: z.z };
+        this.addHpBar(group, def.scale, 1.95 * def.scale + 0.2);
+        ent = { group, rig, px: z.x, pz: z.z, speedEst: 0, lastMoveT: performance.now() };
         this.zombies.set(id, ent);
         this.scene.add(group);
       }
