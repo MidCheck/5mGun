@@ -18,8 +18,10 @@ class AssetManager {
   private texLoader = new THREE.TextureLoader();
   ready = false;
 
-  // 角色统一用 CC0 的 RobotExpressive（丧尸绿色，玩家按队伍着色）
-  private charGltf: { scene: THREE.Object3D; animations: THREE.AnimationClip[] } | null = null;
+  // 丧尸：Quaternius「Animated Zombie」(CC-BY)；玩家：RobotExpressive(CC0) 按队伍着色
+  private zombieGltf: { scene: THREE.Object3D; animations: THREE.AnimationClip[]; h: number } | null = null;
+  private playerGltf: { scene: THREE.Object3D; animations: THREE.AnimationClip[]; h: number } | null = null;
+  private weaponGltf: THREE.Object3D | null = null;
   private tierMat = new Map<string, THREE.Material>();
 
   textures: { ground?: THREE.Texture; wall?: THREE.Texture; metal?: THREE.Texture } = {};
@@ -28,7 +30,13 @@ class AssetManager {
   async load(): Promise<void> {
     const tasks: Promise<any>[] = [];
 
-    tasks.push(this.loadGltf('/assets/models/characters/zombie.glb').then((g) => { this.charGltf = g; }).catch(() => {}));
+    const measure = (g: { scene: THREE.Object3D; animations: THREE.AnimationClip[] }) => {
+      const box = new THREE.Box3().setFromObject(g.scene);
+      return { ...g, h: Math.max(0.1, box.max.y - box.min.y) };
+    };
+    tasks.push(this.loadGltf('/assets/models/characters/zombie.glb').then((g) => { this.zombieGltf = measure(g); }).catch(() => {}));
+    tasks.push(this.loadGltf('/assets/models/characters/player.glb').then((g) => { this.playerGltf = measure(g); }).catch(() => {}));
+    tasks.push(this.loadGltf('/assets/models/weapons/rifle.glb').then((g) => { this.weaponGltf = g.scene; }).catch(() => {}));
 
     const tex = (url: string, repeat: number) => this.loadTex(url, repeat).catch(() => undefined);
     tasks.push(tex('/assets/textures/ground.jpg', 16).then((t) => { this.textures.ground = t; }));
@@ -59,51 +67,59 @@ class AssetManager {
     });
   }
 
-  hasZombie() { return !!this.charGltf; }
-  hasSoldier() { return !!this.charGltf; }
+  hasZombie() { return !!this.zombieGltf; }
+  hasSoldier() { return !!this.playerGltf; }
+  makeWeapon(): THREE.Object3D | null { return this.weaponGltf ? this.weaponGltf.clone(true) : null; }
 
-  private tintedClone(key: string, color: number, roughness: number): THREE.Object3D {
-    const object = cloneSkinned(this.charGltf!.scene);
-    let mat = this.tierMat.get(key);
-    if (!mat) { mat = new THREE.MeshStandardMaterial({ color, roughness, metalness: 0.05 }); this.tierMat.set(key, mat); }
-    object.traverse((o: any) => { if (o.isMesh) { o.material = mat; o.castShadow = false; o.frustumCulled = true; } });
-    return object;
-  }
-
-  /** 创建一只骨骼动画丧尸（按等级着色、缩放）。失败返回 null */
-  makeZombie(tier: string, scale: number, color: number): RiggedInstance | null {
-    if (!this.charGltf) return null;
-    const object = this.tintedClone('z_' + tier, color, 0.85);
-    object.scale.setScalar(scale * 0.92); // RobotExpressive 原始高约 1.8
+  /** 创建一只骨骼动画丧尸（保留原贴图；按等级缩放，特感/精英叠加微调色）。失败返回 null */
+  makeZombie(tier: string, scale: number, _color: number): RiggedInstance | null {
+    if (!this.zombieGltf) return null;
+    const object = cloneSkinned(this.zombieGltf.scene);
+    object.traverse((o: any) => { if (o.isMesh) o.frustumCulled = true; });
+    // 特殊等级叠加色调（精英偏红、特感偏绿、BOSS 暗红）
+    const tint = tier === 't3' ? 0xffb0b0 : tier === 't4' ? 0xb0ffd0 : tier === 't5' ? 0xff8080 : null;
+    if (tint) object.traverse((o: any) => { if (o.isMesh) { o.material = (o.material as THREE.Material).clone(); (o.material as any).color?.multiplyScalar?.(1); (o.material as any).emissive = new THREE.Color(tint).multiplyScalar(0.18); } });
+    const targetH = 1.7 * scale;
+    object.scale.setScalar(targetH / this.zombieGltf.h);
     const mixer = new THREE.AnimationMixer(object);
-    return this.wrap(object, mixer, this.charGltf.animations, 'Walking');
+    return this.wrap(object, mixer, this.zombieGltf.animations);
   }
 
-  /** 创建一名骨骼动画玩家/士兵（按队伍着色）。失败返回 null */
+  /** 创建一名骨骼动画玩家（RobotExpressive，按队伍着色）。失败返回 null */
   makeSoldier(color: number): RiggedInstance | null {
-    if (!this.charGltf) return null;
-    const object = this.tintedClone('p_' + color, color, 0.55);
-    object.scale.setScalar(0.95);
+    if (!this.playerGltf) return null;
+    const object = cloneSkinned(this.playerGltf.scene);
+    let mat = this.tierMat.get('p_' + color);
+    if (!mat) { mat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.1 }); this.tierMat.set('p_' + color, mat); }
+    object.traverse((o: any) => { if (o.isMesh) { o.material = mat; o.frustumCulled = true; } });
+    object.scale.setScalar(1.7 / this.playerGltf.h);
     const mixer = new THREE.AnimationMixer(object);
-    return this.wrap(object, mixer, this.charGltf.animations, 'Idle');
+    return this.wrap(object, mixer, this.playerGltf.animations);
   }
 
-  private wrap(object: THREE.Object3D, mixer: THREE.AnimationMixer, clips: THREE.AnimationClip[], initial: string): RiggedInstance {
-    const actions = new Map<string, THREE.AnimationAction>();
-    for (const c of clips) actions.set(c.name, mixer.clipAction(c));
+  // 语义动画名 → 实际片段（兼容 RobotExpressive 的 "Walking" 与 Zombie 的 "Zombie|ZombieWalk"）
+  private wrap(object: THREE.Object3D, mixer: THREE.AnimationMixer, clips: THREE.AnimationClip[]): RiggedInstance {
+    const find = (subs: string[]) => clips.find((c) => subs.some((s) => c.name.toLowerCase().includes(s)));
+    const sem: Record<string, THREE.AnimationAction | undefined> = {
+      idle: mkAction(find(['idle'])),
+      walk: mkAction(find(['walk'])),
+      run: mkAction(find(['run'])),
+      attack: mkAction(find(['attack', 'bite', 'punch'])),
+    };
+    function mkAction(clip?: THREE.AnimationClip) { return clip ? mixer.clipAction(clip) : undefined; }
     const inst: RiggedInstance = {
       object, mixer, current: '',
       play(name: string, fade = 0.25) {
         if (this.current === name) return;
-        const next = actions.get(name);
+        const next = sem[name] || sem.walk || sem.idle;
         if (!next) return;
-        const prev = this.current ? actions.get(this.current) : undefined;
+        const prev = sem[this.current];
         next.reset().fadeIn(fade).play();
-        if (prev) prev.fadeOut(fade);
+        if (prev && prev !== next) prev.fadeOut(fade);
         this.current = name;
       },
     };
-    inst.play(initial, 0);
+    inst.play('idle', 0);
     return inst;
   }
 }

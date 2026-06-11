@@ -20,7 +20,9 @@
 
 | 文件 | 类型 | 来源 | 授权 |
 |------|------|------|------|
-| models/characters/zombie.glb | 角色骨骼动画模型（丧尸绿色 / 玩家按队伍着色复用同一模型） | RobotExpressive by Tomás Laulhé（修改 Don McCurdy），three.js 示例 https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf/RobotExpressive | **CC0** |
+| models/characters/zombie.glb | 丧尸骨骼动画模型（走/跑/咬/待机/爬） | **Animated Zombie** by **Quaternius**（poly.pizza/m/jkrEvQZb8J） | **CC-BY**（需署名，已在菜单标注） |
+| models/characters/player.glb | 玩家骨骼动画模型（按队伍着色） | RobotExpressive by Tomás Laulhé（修改 Don McCurdy），three.js 示例 | **CC0** |
+| models/weapons/rifle.glb | 第一人称步枪视图模型 | **Assault Rifle** by **Quaternius**（Ultimate Guns Pack, poly.pizza/m/Bgvuu4CUMV） | **CC0** |
 | textures/ground.jpg | 地面（沥青） | Poly Haven `asphalt_02` https://polyhaven.com/a/asphalt_02 | **CC0** |
 | textures/wall.jpg | 墙面（混凝土） | Poly Haven `concrete_wall_008` | **CC0** |
 | textures/metal.jpg | 集装箱（金属板） | Poly Haven `metal_plate` | **CC0** |

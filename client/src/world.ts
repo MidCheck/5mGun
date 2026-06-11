@@ -163,6 +163,27 @@ export class World {
 
   private makeViewmodel(): THREE.Group {
     const g = new THREE.Group();
+    const gun = Assets.makeWeapon();
+    if (gun) {
+      // 归一化：居中 + 缩放到合适长度 + 朝向校正（最长轴对齐 -Z）
+      const box = new THREE.Box3().setFromObject(gun);
+      const size = new THREE.Vector3(); box.getSize(size);
+      const center = new THREE.Vector3(); box.getCenter(center);
+      gun.position.sub(center); // 居中到原点
+      const holder = new THREE.Group();
+      holder.add(gun);
+      // 最长轴 → 枪管方向
+      const maxAxis = size.x >= size.y && size.x >= size.z ? 'x' : (size.z >= size.y ? 'z' : 'y');
+      if (maxAxis === 'x') holder.rotation.y = -Math.PI / 2; // X 长 → 转到 Z
+      const longest = Math.max(size.x, size.y, size.z);
+      const s = 0.62 / longest; // 目标枪长 ~0.62
+      holder.scale.setScalar(s);
+      holder.position.set(0, 0, -0.1);
+      g.add(holder);
+      g.position.set(0.2, -0.2, -0.45);
+      return g;
+    }
+    // ---- 程序化步枪（模型加载失败时回退）----
     const metal = new THREE.MeshStandardMaterial({ color: 0x26282e, metalness: 0.7, roughness: 0.35 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x15161a, metalness: 0.5, roughness: 0.5 });
     const poly = new THREE.MeshStandardMaterial({ color: 0x33363d, metalness: 0.2, roughness: 0.7 });
@@ -285,10 +306,10 @@ export class World {
           ent.speedEst *= 0.7; // 停下后衰减到 Idle
         }
         const v = ent.speedEst, cur = ent.rig.current;
-        let anim = cur || 'Idle';
-        if (v > 5.5) anim = 'Running';
-        else if (v > 1.2) anim = 'Walking';
-        else if (v < 0.4) anim = 'Idle';
+        let anim = cur || 'idle';
+        if (v > 5.5) anim = 'run';
+        else if (v > 1.2) anim = 'walk';
+        else if (v < 0.4) anim = 'idle';
         ent.rig.play(anim);
       }
     });
@@ -325,9 +346,9 @@ export class World {
       if (hp) hp.scale.x = (1.2 * def.scale) * Math.max(0, z.hp / z.maxHp);
 
       if (ent.rig) {
-        // 骨骼动画：攻击→Punch，移动→Running(奔尸)/Walking
-        if (z.anim === 'attack') ent.rig.play('Punch', 0.12);
-        else ent.rig.play(z.tier === 't2' ? 'Running' : 'Walking', 0.2);
+        // 骨骼动画：攻击→咬，移动→奔尸跑/普通走
+        if (z.anim === 'attack') ent.rig.play('attack', 0.12);
+        else ent.rig.play(z.tier === 't2' ? 'run' : 'walk', 0.2);
       } else {
         // 占位：前扑脉冲
         const ud = g.userData as any;
